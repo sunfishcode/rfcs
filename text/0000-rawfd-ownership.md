@@ -149,7 +149,7 @@ The main drawbacks are:
 
 While `nix` is a popular crate, it is a very low-level crate and this RFC
 argues that the more important goal here is to strengthen Rust's safety and
-encapsulation, which will benefits more users.
+encapsulation, which will benefit more users.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
