@@ -98,10 +98,10 @@ provide functions which wrap a low-level value to produce a high-level value.
 
 Functions like `from_raw_fd` are considered `unsafe` because raw resource
 handles can be thought of as raw pointers. They have many of the same hazards;
-they can dangle and alias, and the consequences of using a dangling or
-unintentionally aliased raw resource handle could include corrupted I/O or
-lost data. It could also mean that code in one crate could accidentally corrupt
-or observe private data in another crate.
+they can dangle and alias, and the consequences of using unintentionally
+aliased raw resource handle could include corrupted I/O or lost data. It could
+also mean that code in one crate could accidentally corrupt or observe private
+data in another crate.
 
 [`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
 [`TcpStream`]: https://doc.rust-lang.org/stable/std/net/struct.TcpStream.html
