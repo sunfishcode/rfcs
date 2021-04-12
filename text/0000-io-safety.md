@@ -124,9 +124,9 @@ Add the following subsection to the ["Unsafe abilities"] section of the
 
 In addition to memory safety, Rust's standard library also guarantees
 *I/O safety*. I/O safety means that all I/O performed via handle values
-([`RawFd`], [`RawHandle`], and [`RawSocket`]) uses handle values that are
-explicitly returned from the OS, and occurs within the lifetime the OS
-associates with them.
+([`RawFd`], [`RawHandle`], and [`RawSocket`]), including closing them,
+uses handle values that are explicitly returned from the OS, and occurs
+within the lifetime the OS associates with them.
 
 For example, on Unix-like platforms, an I/O handle is a plain integer type
 ([`RawFd`]), so Rust's type system doesn't prevent program from creating a
@@ -206,9 +206,9 @@ raw resource handles when they don't need to.
 
 ## Say that handles can be *owned*
 
-`File` acts like it owns its handle, in that it frees the resources when it's
-dropped. However, ownership in Rust implies *exclusive* ownership, that that's
-not strictly required here.
+`File` acts like it owns its handle, in the sense that it frees the resources
+when it's dropped. However, ownership in Rust implies *exclusive* ownership,
+and that's not strictly required here.
 
 There are even real-world use cases which effectively do things like this:
 
@@ -263,6 +263,13 @@ wording, but there is certainly room to discuss other ways to word these.
 
 The reference-level explanation mentions [The Rust Book]. Is it important
 to update this? Are there more references that we should update?
+
+An issue that's out of scope is the issue that as of [rust-lang/rust#76969],
+`RawFd` implements `FromRawFd` and doesn't own the file descriptor, meaning
+that the existing comments about `FromRawFd` implementations "consuming
+ownership" aren't accurate. This is an independent issue however, and
+can be addressed in the future independently of the solution that comes out
+of this RFC.
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
