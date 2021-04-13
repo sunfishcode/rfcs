@@ -36,11 +36,12 @@ community about the relationship between `unsafe` and I/O.
 [times]: https://users.rust-lang.org/t/why-is-fromrawfd-unsafe/39670
 
 This supports use cases that work with `RawFd`, `RawHandle`, and `RawSocket`
-types directly, such as the [`nix`], [`unsafe-io`], and [`posish`] crates,
-to give them clear guidance on when functions working with these types
+types directly, such as the [`nix`], [`socket2`], [`unsafe-io`], and [`posish`]
+crates, to give them clear guidance on when functions working with these types
 should be marked `unsafe`.
 
 [`nix`]: https://crates.io/crates/nix
+[`socket2`]: https://crates.io/crates/socket2
 [`unsafe-io`]: https://crates.io/crates/unsafe-io
 [`posish`]: https://crates.io/crates/posish
 
@@ -179,12 +180,19 @@ The main drawbacks are:
  - This will imply that crates with APIs that use file descriptors a lot,
    notably `nix`, should change many functions to be `unsafe`, and code using
    those APIs would need to be updated.
+ - This would require changes to crates using `AsRawFd` or `IntoRawFd` to accept
+   "any file-like type" or "any socket-like type", such as `socket2`'s
+   [`SockRef::from`]. One option is to make those functions `unsafe`. Another
+   is to use the utilities in the [`unsafe-io`] crate which factor out the
+   `unsafe` parts of this pattern.
  - This would rule out adding safe versions of `FromRawFd`, `FromRawHandle`,
    and `FromRawSocket`, which would be convenient for some use cases.
 
 While `nix` is a popular crate, it is a very low-level crate and this RFC
 argues that the more important goal here is to strengthen Rust's safety and
 encapsulation, which will benefit more users.
+
+[`SockRef::from`]: https://docs.rs/socket2/0.4.0/socket2/struct.SockRef.html#method.from
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
