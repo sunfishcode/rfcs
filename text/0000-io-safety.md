@@ -155,10 +155,13 @@ Revise the parts of the documentation comments for [`FromRawFd::from_raw_fd`],
 explaining the use of `unsafe` to say the following:
 
 ```markdown
-This function is also unsafe as it may violate [I/O safety]. Arbitrary handle
-values or values associated with resources outside their lifetime could alias
-encapsulated handle values elsewhere in a program, leading to corrupted output,
-lost input data, or encapsulation leaks.
+This function is also unsafe as it may violate [I/O safety]. Callers must
+ensure that the handle value passed in is a value returned from the OS and
+that the resulting value won't outlive the lifetime the OS associates
+with that handle value. Arbitrary handle values or values associated with
+resources outside their lifetime could alias encapsulated handle values
+elsewhere in a program, leading to corrupted output, lost input data, or
+encapsulation leaks.
 ```
 
 And, add similar text to [The Rust Book].
