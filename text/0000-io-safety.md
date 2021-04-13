@@ -61,15 +61,23 @@ handles provided by the OS. These are very simple types which don't
 provide any behavior on their own, and just represent identifiers
 which can be passed to low-level OS APIs.
 
+These raw resource handles can be thought of as raw pointers. They have many
+of the same hazards; they can dangle and alias, and the consequences of using
+an unintentionally aliased raw resource handle could include corrupted output
+or silently lost input data. It could also mean that code in one crate could
+accidentally corrupt or observe private data in another crate. Protection from
+these hazards is called *I/O safety*.
+
 Rust also has high-level datatypes such as [`File`] and [`TcpStream`] which
 are wrappers around these low-level OS resource handles, providing high-level
-interfaces on top of OS APIs.
+interfaces on top of OS APIs. These high-level datatypes implement the traits
+[`FromRawFd`] on Unix-like platforms, and [`FromRawHandle`] and
+[`FromRawSocket`] on Windows, which provide functions which wrap a low-level
+value to produce a high-level value.
 
-These high-level datatypes implement the traits [`FromRawFd`] on Unix-like
-platforms, and [`FromRawHandle`] and [`FromRawSocket`] on Windows, which
-provide functions which wrap a low-level value to produce a high-level value.
-However, the type system here is insufficient to ensure that these values
-are valid. For some examples:
+These functions are `unsafe`, since they are unable to guarantee I/O safety.
+The type system is insufficient to ensure that the handles passed in are valid.
+For some examples:
 
 ```rust
     use std::fs::File;
@@ -98,14 +106,9 @@ are valid. For some examples:
     let another = File::open("another.txt")?;
 ```
 
-Functions like `from_raw_fd` are `unsafe` because raw resource handles can be
-thought of as raw pointers. They have many of the same hazards; they can dangle
-and alias, and the consequences of using unintentionally aliased raw resource
-handle could include corrupted output or silently lost input data. It could
-also mean that code in one crate could accidentally corrupt or observe private
-data in another crate.
-
-Protection from these hazards is called *I/O safety*.
+Callers must ensure that the handle value passed into `from_raw_fd` is a value
+explicitly returned from the OS, and that the return value of `from_raw_fd`
+won't outlive the lifetime the OS associates with the handle value.
 
 [`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
 [`TcpStream`]: https://doc.rust-lang.org/stable/std/net/struct.TcpStream.html
