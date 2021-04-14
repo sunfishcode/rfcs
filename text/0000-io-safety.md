@@ -180,7 +180,7 @@ And, add similar text to [The Rust Book].
 # Drawbacks
 [drawbacks]: #drawbacks
 
-The main drawbacks are:
+Drawbacks include:
  - This implies that crates with APIs that use file descriptors, such as `nix`,
    should change such functions to be `unsafe`, and code using those APIs would
    need to be updated.
@@ -195,6 +195,15 @@ The main drawbacks are:
 While `nix` is a popular crate, it is a low-level crate and this RFC argues
 that the more important goal here is to strengthen Rust's safety and
 encapsulation, which will benefit more users.
+
+ - This explicitly extends the scope of `unsafe` to something outside of just
+   memory safety and undefined behavior, which Rust has long limited it to.
+
+The scope of `unsafe` is a choice that Rust makes, rather than being derived
+from any fundamental constraints. Here, the observation is that since
+invalid resource handles can break encapsulation boundaries and cause
+spooky action at a distance, they are sufficiently similar to in spirit to
+memory safety that they're worth covering.
 
 [`SockRef::from`]: https://docs.rs/socket2/0.4.0/socket2/struct.SockRef.html#method.from
 
