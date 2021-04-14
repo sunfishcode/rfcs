@@ -6,16 +6,19 @@
 # Summary
 [summary]: #summary
 
-Declare that the Rust standard library provides an *I/O safety* guarantee.
-I/O safety means that all I/O performed via handle values ([`RawFd`],
-[`RawHandle`], and [`RawSocket`]) uses handle values that are explicitly
-returned from the OS, and occurs within the lifetime the OS associates with
-them.
-
-This RFC makes no code changes in Rust itself. The affected functions,
+Improve the explanation of why the functions
 [`FromRawFd::from_raw_fd`], [`FromRawHandle::from_raw_handle`], and
-[`FromRawSocket::from_raw_socket`], are already `unsafe`, so this RFC is
-just proposing new documentation explaining why they're `unsafe`.
+[`FromRawSocket::from_raw_socket`], are `unsafe`.
+
+In support of this, declare that the Rust standard library guarantees
+*I/O safety*. This means all I/O performed via raw handle values ([`RawFd`],
+[`RawHandle`], and [`RawSocket`]) uses values that are explicitly returned
+from the OS, and occurs within the lifetimes the OS associates with them.
+
+This RFC needs no code changes in Rust itself. The affected functions
+are already `unsafe`, so this RFC is just proposing a new explanation for
+*why* they're unsafe, and proposing new guidance to authors of crates that
+operate on raw handle values.
 
 [`RawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/type.RawFd.html
 [`RawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/type.RawHandle.html
@@ -27,10 +30,10 @@ just proposing new documentation explaining why they're `unsafe`.
 # Motivation
 [motivation]: #motivation
 
-The purpose is to answer a question that has come up a [few] [times] about why
-`from_raw_fd` is `unsafe`, to provide documentation about it, to provide useful
-guarantees to Rust programs, and to give guidance to crate authors about the
-relationship between `unsafe` and I/O.
+This proposal seeks to answer a question that has come up a [few] [times] about
+why `from_raw_fd` is `unsafe`, to provide documentation about it, to provide
+useful guarantees to Rust programs, and to give guidance to crate authors about
+the relationship between `unsafe` and I/O.
 
 [few]: https://github.com/rust-lang/rust/issues/72175
 [times]: https://users.rust-lang.org/t/why-is-fromrawfd-unsafe/39670
