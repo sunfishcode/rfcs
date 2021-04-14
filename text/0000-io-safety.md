@@ -205,7 +205,7 @@ encapsulation, which will benefit more users.
 The scope of `unsafe` is a choice that Rust makes, rather than being derived
 from any fundamental constraints. Here, the observation is that since
 invalid resource handles can break encapsulation boundaries and cause
-spooky action at a distance, they are sufficiently similar to in spirit to
+spooky action at a distance, they are sufficiently similar in spirit to
 memory safety that they're worth covering.
 
 [`SockRef::from`]: https://docs.rs/socket2/0.4.0/socket2/struct.SockRef.html#method.from
