@@ -255,9 +255,9 @@ to update this? Are there more references that we should update?
 An issue that's out of scope is the issue that as of [rust-lang/rust#76969],
 `RawFd` implements `FromRawFd` and doesn't own the file descriptor, meaning
 that the existing comments about `FromRawFd` implementations "consuming
-ownership" aren't accurate. This is an independent issue however, and
-can be addressed in the future independently of the solution that comes out
-of this RFC.
+ownership" aren't accurate. The meaning of ownership of a raw resource handle
+is something that can be addressed in the future independently of the solution
+that comes out of this RFC.
 
 The rules for file descriptors in this proposal are vague about the identity
 of raw handle values. What does it mean for a resource lifetime to be
