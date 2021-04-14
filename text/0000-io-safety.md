@@ -218,32 +218,6 @@ ergonomic for uncommon use cases. This would be a small benefit, and may even
 be a downside, if it ends up helping more people to write code that works with
 raw resource handles when they don't need to.
 
-## Say that handles can be *owned*
-
-`File` acts like it owns its handle, in the sense that it frees the resources
-when it's dropped. However, ownership in Rust implies *exclusive* ownership,
-and that's not strictly required here.
-
-There are even real-world use cases which effectively do things like this:
-
-```rust
-   fn foo(file: File) -> io::Result<()> {
-      let raw_fd = file.as_raw_fd();
-      let temp = ManuallyDrop::new(unsafe { File::from_raw_fd(raw_fd) });
-      let mut buf = Vec::new();
-      temp.read_to_end(&mut buf)?;
-   }
-```
-
-`temp` here does not *exclusively* own its resources, but this isn't a
-serious hazard in this case. The `unsafe` here covers the fact that
-`temp` can't outlive `file`'s handle, since this isn't enforced by the
-type system. Other than that, this program is fine.
-
-The problems we're trying to solve here aren't about exclusivity per se,
-but about avoiding accidental aliasing that can happen as a result of
-forging and dangling, so exclusive ownership isn't the tool we need.
-
 ## Do nothing
 
 The other alternative would be to do nothing. [`FromRawFd::from_raw_fd`] and
@@ -284,6 +258,18 @@ that the existing comments about `FromRawFd` implementations "consuming
 ownership" aren't accurate. This is an independent issue however, and
 can be addressed in the future independently of the solution that comes out
 of this RFC.
+
+The rules for file descriptors in this proposal are vague about the identity
+of raw handle values. What does it mean for a resource lifetime to be
+associated with a handle if the handle is just an integer type. Do all
+integer types with the same value share that association? The Rust [reference]
+defines undefined behavior for memory in terms of
+[LLVM's pointer aliasing rules]; we could conceivably need a similar concept of
+handle aliasing rules? This doesn't seem necessary for present practical needs,
+but it could become necessary if there's a need for greater precision.
+
+[reference]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
+[LLVM's pointer aliasing rules]: http://llvm.org/docs/LangRef.html#pointer-aliasing-rules
 
 # Future possibilities
 [future-possibilities]: #future-possibilities
