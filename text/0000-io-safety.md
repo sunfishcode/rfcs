@@ -6,78 +6,97 @@
 # Summary
 [summary]: #summary
 
-Improve the explanation of why the functions
-[`FromRawFd::from_raw_fd`], [`FromRawHandle::from_raw_handle`], and
-[`FromRawSocket::from_raw_socket`], are `unsafe`.
+Close a hole in encapsulation boundaries in Rust by providing a way for users
+of `AsRawFd`, `IntoRawFd`, and related traits to obtain useful guarantees about
+their raw resource handles.
 
-In support of this, declare that the Rust standard library guarantees
-*I/O safety*. This means all I/O performed via raw handle values ([`RawFd`],
-[`RawHandle`], and [`RawSocket`]) uses values that are explicitly returned
-from the OS, and occurs within the lifetimes the OS associates with them.
+[rust-lang/rust#76969] makes `RawFd` implement `AsRawFd` and `IntoRawFd`. As
+the comments note, the seeming unfortunate consequences here aren't new, and
+come from the existing the existing types and traits in `std`. This RFC
+proposes a new solution, introducing a new `OwnsRaw` trait and a concept of
+I/O safety, building on and providing an explanation for the existing
+`from_raw_fd` function being unsafe.
 
-The affected functions are already `unsafe`, so there are no changes to Rust's
-own code here. This RFC just proposes a new explanation for *why* they're
-unsafe, and new guidance to authors of crates that operate on raw handle
-values.
-
-[`RawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/type.RawFd.html
-[`RawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/type.RawHandle.html
-[`RawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/type.RawSocket.html
-[`FromRawFd::from_raw_fd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.FromRawFd.html#tymethod.from_raw_fd
-[`FromRawHandle::from_raw_handle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawHandle.html#tymethod.from_raw_handle
-[`FromRawSocket::from_raw_socket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawSocket.html#tymethod.from_raw_socket
+[rust-lang/rust#76969]: https://github.com/rust-lang/rust/pull/76969
 
 # Motivation
 [motivation]: #motivation
 
-This proposal seeks to answer a question that has come up a [few] [times] about
-why `from_raw_fd` is `unsafe` in a way that provides useful guarantees to Rust
-programs, to document it, and to give guidance to crate authors about the
-relationship between `unsafe` and I/O.
+Rust's standard library today almost provides a concept called *I/O safety*,
+a property that would guarantee that if one piece of code holds a resource
+handle privately, other code in the program cannot access it.
+[`FromRawFd::from_raw_fd`] today is unsafe, which prevents users from doing
+things like `File::from_raw_fd(7)`, in safe Rust, to do I/O a file descriptor
+which might otherwise be encapsulated.
 
-This supports use cases that work with `RawFd`, `RawHandle`, and `RawSocket`
-types directly, such as [`nix`], [`socket2`], [`unsafe-io`], and [`posish`]
-crates, and others.
+However, there's a loophole. A somewhat common pattern in library APIs is to
+use [`AsRawFd`] and [`IntoRawFd`] to accept handles to do I/O operations on,
+like this:
+
+```rust
+pub fn do_something<FD: AsRawFd>(input: &FD) -> io::Result<()> {
+    syscall(input.as_raw_fd())
+}
+```
+
+`AsRawFd` doesn't put any restrictions on the return value of `as_raw_fd`
+though, so the code above defines a function that can do I/O on arbitrary
+`RawFd` values requiring the caller to use an `unsafe`. One can even write
+`do_something(&7)`, since [`RawFd`] itself implements `AsRawFd`.
+
+This can break encapsulation boundaries by creating aliases to resource
+handles held privately elsewhere in the program, and can cause
+[spooky action at a distance].
+
+One solution which has been discussed for this is to wrap `RawFd` in a newtype.
+On one hand, introducing a new type and getting users to switch to new types
+and new traits would be much more disruptive. This RFC doesn't rule out doing
+this in the future though.
+
+This RFC introduces a new trait, `OwnsRaw`, which is designed to work with the
+existing `std` types and traits instead of changing or replacing them, and
+which provides a more gradual path to eventually closing the I/O safety
+loophole. And it answers a question that has come up a [few] [times] about why
+`from_raw_fd` is unsafe.
 
 The expected outcomes are:
 
+ - A new trait, `std::io::OwnsRaw`.
  - A new section in the ["Keyword unsafe"] page in the
-   [Rust reference documentation] documenting the new "I/O safety" concept.
+   [Rust `std` reference documentation] documenting the I/O safety concept.
  - Revised documentation comments for [`FromRawFd::from_raw_fd`],
    [`FromRawHandle::from_raw_handle`], and [`FromRawSocket::from_raw_socket`],
-   explaining why they're `unsafe` in terms of I/O safety.
- - Similar documentation in other Rust documentation describing `unsafe`.
+   explaining why they're unsafe in terms of I/O safety.
 
 [few]: https://github.com/rust-lang/rust/issues/72175
 [times]: https://users.rust-lang.org/t/why-is-fromrawfd-unsafe/39670
-[`nix`]: https://crates.io/crates/nix
-[`socket2`]: https://crates.io/crates/socket2
-[`unsafe-io`]: https://crates.io/crates/unsafe-io
-[`posish`]: https://crates.io/crates/posish
+[Rust `std` reference documentation]: https://doc.rust-lang.org/std/keyword.unsafe.html
+[spooky action at a distance]: https://en.wikipedia.org/wiki/Action_at_a_distance_(computer_programming)
 
 # Guide-level explanation
 [guide-level-explanation]: #guide-level-explanation
 
-Rust has low-level types, [`RawFd`] on Unix-like platforms, and
-[`RawHandle`]/[`RawSocket`] on Windows, which represent resource handles
+## The I/O Safety Concept
+
+Rust's standard library has low-level types, [`RawFd`] on Unix-like platforms,
+and [`RawHandle`]/[`RawSocket`] on Windows, which represent resource handles
 provided by the OS. These don't provide any behavior on their own, and just
 represent identifiers which can be passed to low-level OS APIs.
 
-These raw resource handles can be thought of as raw pointers. They have many of
-the same hazards; they can dangle and alias, and the consequences of using an
-unintentionally aliased raw resource handle could include corrupted output or
-silently lost input data. It could also mean that code in one crate could
-accidentally corrupt or observe private data in another crate. Protection from
-these hazards is called *I/O safety*.
+These raw resource handles can be thought of as raw pointers. They have similar
+hazards; the consequences of using an unintentionally aliased raw resource
+handle could include corrupted output or silently lost input data. It could
+also mean that code in one crate could accidentally corrupt or observe private
+data in another crate. Protection from these hazards is called *I/O safety*.
 
-Rust also has high-level types such as [`File`] and [`TcpStream`] which are
-wrappers around these low-level OS resource handles, providing high-level
-interfaces to OS APIs.
+Rust's standard library also has high-level types such as [`File`] and
+[`TcpStream`] which are wrappers around these low-level OS resource handles,
+providing high-level interfaces to OS APIs.
 
 These high-level types also implement the traits [`FromRawFd`] on Unix-like
 platforms, and [`FromRawHandle`]/[`FromRawSocket`] on Windows, which provide
 functions which wrap a low-level value to produce a high-level value. These
-functions are `unsafe`, since they're unable to guarantee I/O safety. The type
+functions are unsafe, since they're unable to guarantee I/O safety. The type
 system is insufficient to ensure that the handles passed in are valid. For
 example:
 
@@ -116,129 +135,187 @@ Callers must ensure that the handle value passed into `from_raw_fd` is a value
 explicitly returned from the OS, and that the return value of `from_raw_fd`
 won't outlive the lifetime the OS associates with the handle value.
 
-[`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
-[`TcpStream`]: https://doc.rust-lang.org/stable/std/net/struct.TcpStream.html
-[`FromRawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.FromRawFd.html
-[`FromRawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawHandle.html
-[`FromRawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawSocket.html
+I/O safety is new as an explicit concept, but it reflects existing common
+practices which most Rust code is already following. For example, Rust's `std`
+will require no changes beyond the introduction of a new trait and new impls
+for it, because all the existing code already has the required properties.
+Initially, not all of the Rust ecosystem will support I/O safety though, and
+it's expected that adoption will be incremental.
+
+## The `OwnsRaw` trait
+
+These high-level types also implement the traits [`AsRawFd`]/[`IntoRawFd`] on
+Unix-like platforms and
+[`AsRawHandle`]/[`AsRawSocket`]/[`IntoRawHandle`]/[`IntoRawSocket`] on Windows,
+which provide ways to obtain the low-level value contained in a high-level
+value. Among other uses, these are used in APIs which wish to accept any type
+which contains a raw handle value, such as in the `do_something` example in the
+[motivation].
+
+`AsRaw*` and `IntoRaw*` don't make any guarantees, so the example as written
+doesn't guarantee I/O safety. `std::io::OwnsRaw` would be a new unsafe trait,
+declared like this:
+
+```rust
+pub unsafe trait OwnsRaw {}
+```
+
+There are no required functions, so implementing it just takes one line,
+plus comments:
+
+```rust
+/// # Safety
+///
+/// `MyType` wraps a `std::fs::File` which handles the low-level details, and
+/// doesn't have a way to reassign or independently drop it.
+unsafe impl OwnsRaw for MyType {}
+```
+
+It does require `unsafe`, to require the code to explicitly commit to
+upholding I/O safety. With `OwnsRaw`, the `do_something` example should
+simply add a `+ OwnsRaw`, like this, to provide I/O safety:
+
+```rust
+pub fn do_something<FD: AsRawFd + OwnsRaw>(input: &FD) -> io::Result<()> {
+    syscall(input.as_raw_fd())
+}
+```
+
+## Incremental adoption
+
+I/O safety and `OwnsRaw` wouldn't need to be adopted all at once. If this RFC is
+accepted, the sequence of events might look like this:
+
+ - `OwnsRaw` is added to `std`, along with impls for all the relevant `std`
+   types. This would be a backwards-compatible change.
+
+ - After that, crates could implement `OwnsRaw` for their own types. These
+   changes would be small and semver-compatible, so this wouldn't need any
+   special coordination.
+
+ - Once the standard library and enough popular crates utilize `OwnsRaw`,
+   crates could start to add `+ OwnsRaw` bounds (or adding `unsafe`), at their
+   own pace. These would be semver-incompatible changes, though most users of
+   APIs adding `+ OwnsRaw` wouldn't be expected to need any changes.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
 
-Add the following subsection to the ["Unsafe abilities"] section of the
-["Keyword unsafe"] page in the [Rust reference documentation]:
+## The I/O Safety Concept
 
-```markdown
-## I/O Safety
+In addition to the Rust language's memory safety, Rust's standard library also
+guarantees I/O safety. An I/O operation is *valid* if the raw handles
+([`RawFd`], [`RawHandle`], and [`RawSocket`]) it operates on are values
+explicitly returned from the OS, and the operation occurs within the lifetime
+the OS associates with them. Rust code has *I/O safety* if it's not possible
+for that code to cause invalid I/O operations.
 
-In addition to memory safety, Rust's standard library also guarantees
-*I/O safety*. I/O safety means that all I/O performed via raw handle values
-([`RawFd`], [`RawHandle`], and [`RawSocket`]), including closing them, uses
-values that are explicitly returned from the OS, and occurs within the lifetime
-the OS associates with them.
-
-For example, on Unix-like platforms, [`RawFd`] is a plain integer type, so
-Rust's type system doesn't prevent program from creating a handle value from an
-arbitrary integer value ("forging" a handle), or from remembering the value of
-a handle after the resource is `close`d (a "dangling" handle). Unix-type
-platforms typically define their behavior in such cases, so this isn't about
-memory safety or undefined behavior at the [language level]. However, such
-handles can unexpectedly alias other handles in the program, which may lead to
-corrupted output, lost data on input, or leaks in encapsulation boundaries.
-
-Some OS's document their file descriptor allocation algorithms, however use of
-these algorithms to predict file descriptor values is still considered forging,
-and doesn't produce a handle value "explicitly returned from the OS".
+While Some OS's document their file descriptor allocation algorithms, a handle
+value predicted from these algorithms isn't "explicitly returned from the OS".
 
 Functions accepting arbitrary raw I/O handle values ([`RawFd`], [`RawHandle`],
-or [`RawSocket`]) are considered `unsafe` if they can lead to any I/O being
+or [`RawSocket`]) should be marked `unsafe` if they can lead to any I/O being
 performed on those handles through safe APIs.
-```
 
-And, revise the parts of the documentation comments for
-[`FromRawFd::from_raw_fd`], [`FromRawHandle::from_raw_handle`], and
-[`FromRawSocket::from_raw_socket`] explaining the use of `unsafe` to say the
-following:
+Functions accepting types which implement [`AsRawFd`]/[`IntoRawFd`] on
+Unix-like platforms and
+[`AsRawHandle`]/[`AsRawSocket`]/[`IntoRawHandle`]/[`IntoRawSocket`] on Windows
+should add a `+ OwnsRaw` bound if they do I/O with the returned raw handle.
 
-```rust
-/// This function is also `unsafe` as it isn't able to guarantee [I/O safety].
-/// Callers must ensure that the handle value passed in is a value returned
-/// from the OS and that the resulting value won't outlive the lifetime the OS
-/// associates with that handle value. Arbitrary handle values or values
-/// associated with resources outside their lifetime could alias encapsulated
-/// handle values elsewhere in a program, leading to corrupted output, lost
-/// input data, or encapsulation leaks.
-```
+## The `OwnsRaw` trait.
 
-And, add similar text to [The Rust Book].
+Types implementing the `OwnsRaw` trait guarantee that they uphold I/O safety,
+as described above. They must not make it possible to write a safe function
+which can perform invalid I/O operations, and:
 
-[language level]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
-["Unsafe abilities"]: https://doc.rust-lang.org/stable/std/keyword.unsafe.html#unsafe-abilities
+ - A type implementing `OwnsRaw` can only be constructed from a raw resource
+   handle via an unsafe function, such as [`FromRawFd::from_raw_fd`].
+ - A type implementing `AsRaw* + OwnsRaw` means its `as_raw_*` function returns a
+   handle which is valid to use as long as the object passed to `self` is live.
+   Such types may not have methods to close or reassign the handle without
+   dropping the whole object.
+ - A type implementing `IntoRaw* + OwnsRaw` means its `into_raw_*` function
+   returns a handle which is valid to use at the point of the call.
+
+`OwnsRaw` is implemented for all standard library types which implement
+`AsRawFd` except for `RawFd` itself.
+
 ["Keyword unsafe"]: https://doc.rust-lang.org/stable/std/keyword.unsafe.html
-[The Rust Book]: https://doc.rust-lang.org/book/ch19-01-unsafe-rust.html
-[Rust reference documentation]: https://doc.rust-lang.org/std/keyword.unsafe.html
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
 Drawbacks include:
 
- - This implies that crates with APIs that use file descriptors, such as `nix`,
-   should either change such functions to be `unsafe`, or change them to use
-   types that make stronger guarantees.
- - This would require changes to crates using `AsRawFd` or `IntoRawFd` to accept
-   "any file-like type" or "any socket-like type", such as `socket2`'s
-   [`SockRef::from`]. One option is to make those functions `unsafe`. Another
-   is for those functions to use the utilities in the [`unsafe-io`] crate which
-   factor out the `unsafe` parts of this pattern.
+ - Crates with APIs that use file descriptors, such as [`nix`], would need to
+   switch to types which implement `AsRawFd + OwnsRaw`, use crates which
+   provide equivalent mechanisms for doing this such as [`unsafe-io`], or
+   change such functions to be unsafe.
+ - Crates using `AsRawFd` or `IntoRawFd` to accept "any file-like type" or
+   "any socket-like type", such as [`socket2`]'s [`SockRef::from`], would need
+   to either add a `+ OwnsRaw` bound or make these functions unsafe.
  - This would rule out adding safe versions of `FromRawFd`, `FromRawHandle`,
    and `FromRawSocket`, which would be convenient for some use cases.
-
-While `nix` is a popular crate, it's a low-level crate and this RFC argues that
-the more important goal here is to strengthen Rust's safety and encapsulation,
-which will benefit more users.
-
  - This explicitly extends the scope of `unsafe` to something outside of just
-   memory safety and undefined behavior, which Rust has long limited it to.
+   memory safety and undefined behavior.
 
-The scope of `unsafe` is a choice that Rust makes, rather than being derived
-from any fundamental constraints. Here, the observation is that since invalid
-resource handles can break encapsulation boundaries and cause spooky action at
-a distance, I/O safety is sufficiently similar in spirit to memory safety that
-it's worth covering.
-
-[`SockRef::from`]: https://docs.rs/socket2/0.4.0/socket2/struct.SockRef.html#method.from
+[`nix`]: https://crates.io/crates/nix
+[`socket2`]: https://crates.io/crates/socket2
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-## Handles are plain data
+## Handles as plain data
 
 The main alternative would be to say that raw resource handles are plain data,
-with no concept of I/O safety and no relationship to OS resource lifetimes.
-The main benefit of this approach would be to require fewer `unsafe` blocks in
-use cases that work with raw resource handles. On Unix-like platforms at least,
-this wouldn't ever lead to memory unsafety or undefined behavior.
+with no concept of I/O safety and no inherent relationship to OS resource
+lifetimes. On Unix-like platforms at least, this wouldn't ever lead to memory
+unsafety or undefined behavior.
 
 However, most Rust code doesn't interact with raw resource handles directly.
-This is a good thing, independently of this RFC, because resources ultimately do
-have lifetimes, so most Rust code will always be better off using higher-level
-types which manage these lifetimes automatically and provide better ergonomics
-in many other respects.
+This is a good thing, independently of this RFC, because resources ultimately
+do have lifetimes, so most Rust code will always be better off using
+higher-level types which manage these lifetimes automatically and which provide
+better ergonomics in many other respects. As such, the plain-data approach
+would at best making raw resource handles marginally more ergonomic for
+uncommon use cases. This would be a small benefit, and may even be a downside,
+if it ends up encouraging people to write code that works with raw resource
+handles when they don't need to.
 
-So this alternative would at best making raw resource handles marginally more
-ergonomic for uncommon use cases. This would be a small benefit, and may even
-be a downside, if it ends up encouraging people to write code that works with
-raw resource handles when they don't need to.
+Another benefit of the plain-data approach would be that it wouldn't involve
+any code changes in any crates. The I/O safety approach will require changes to
+Rust code in crates such as [`socket2`] and [`nix`] which have APIs involving
+[`AsRawFd`] and [`RawFd`]. However, the changes for I/O safety can be made
+incrementally across the ecosystem rather than needing to happen all at once.
 
-## Do nothing
+Another benefit of the plain-data approach would be that it keeps the scope of
+`unsafe` limited to just memory safety and undefined behavior. Rust has often
+drawn a careful line here and resisted using `unsafe` for describing arbitrary
+hazards. However, raw handles are much like raw pointers into a separate
+address space; they can dangle or be computed in invalid ways. I/O safety has
+much in common with memory safety, both in terms of addressing
+spooky-action-at-a-distance, and in terms of ownership being the main concept
+for robust abstractions, so it's fairly natural to use similar safety concepts.
+
+## Just improve the documentation
 
 On a practical level, the problems addressed here aren't urgent for most Rust
-users today, so Rust could arguably get by without doing anything here.
+users today, so Rust could arguably get by just by adding more documentation.
 
-However, this would leave [`FromRawFd::from_raw_fd`] with confusing comments,
-inconsistency in parts of the ecosystem that use these features, and ambiguity
-over whether Rust intends that I/O can be fully encapsulated.
+However, this would leave the `AsRawFd` loophole described in the [motivation]
+open, leaving Rust without a way to fully encapsulate I/O.
+
+## Newtypes for `RawFd`/`RawHandle`/`RawSocket`
+
+This was suggested in [rust-lang/rust#76969], and this RFC doesn't rule out
+doing something like this in the future, but it would be a much bigger change,
+as it'd involve existing code migrating to using different types and traits.
+
+## I/O safety but not `OwnsRaw`
+
+`OwnsRaw` could be removed from this RFC. The main downsides would be that
+we'd either have to recommend people who'd otherwise use it to add a
+dependency on [`unsafe-io`] to use its `OwnsRaw`, or to use more `unsafe`.
 
 # Prior art
 [prior-art]: #prior-art
@@ -247,8 +324,11 @@ Most memory-safe programming languages have safe abstractions around raw
 resource handles. Most often, they simply avoid exposing the raw resource
 values altogether, such as in [C#], [Java], and others. Making it `unsafe` to
 perform I/O through a given raw resource handle value would let safe Rust have
-the same guarantees as those effectively provided by such memory-safe
-languages.
+the same guarantees as those effectively provided by such languages.
+
+The `std::io::OwnsRaw` trait proposed here comes from [`unsafe_io::OwnsRaw`],
+and experience with this trait, including in some production use cases, has
+shaped this proposal.
 
 [C#]: https://docs.microsoft.com/en-us/dotnet/api/system.io.file?view=net-5.0
 [Java]: https://docs.oracle.com/javase/7/docs/api/java/io/File.html?is-external=true
@@ -256,27 +336,22 @@ languages.
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
 
-Is the wording in the [reference-level explanation] the best way to describe
-the safety guarantees?
+## Naming things...
 
-The reference-level explanation mentions [The Rust Book]. Is it important to
-update this? Are there other references that we should update?
+Is there a better name for the `OwnsRaw` trait?
 
-An issue that's out of scope is the issue that as of [rust-lang/rust#76969],
-`RawFd` implements `FromRawFd` and doesn't own the file descriptor, meaning
-that the existing comments about `FromRawFd` implementations "consuming
-ownership" aren't accurate. The meaning of ownership of a raw resource handle
-is something that can be addressed in the future independently of the solution
-that comes out of this RFC.
+## Formalizing ownership
 
-The rules for raw handle values in this proposal are vague about the identity
-such values. What does it mean for a resource lifetime to be associated with a
-handle if the handle is just an integer type? Do all integer types with the
-same value share that association? The Rust [reference] defines undefined
-behavior for memory in terms of [LLVM's pointer aliasing rules]; we could
-conceivably need a similar concept of handle aliasing rules. This doesn't seem
-necessary for present practical needs, but it could be added later if there's a
-need for greater precision.
+This RFC doesn't define a formal model for resource handle ownership and
+lifetimes. The rules for raw handle values in this proposal are vague about the
+identity such values. What does it mean for a resource lifetime to be
+associated with a handle if the handle is just an integer type? Do all integer
+types with the same value share that association?
+
+The Rust [reference] defines undefined behavior for memory in terms of
+[LLVM's pointer aliasing rules]; I/O could conceivably need a similar concept of
+handle aliasing rules. This doesn't seem necessary for present practical needs,
+but it could be explored later if there's a need for greater precision.
 
 [reference]: https://doc.rust-lang.org/reference/behavior-considered-undefined.html
 [LLVM's pointer aliasing rules]: http://llvm.org/docs/LangRef.html#pointer-aliasing-rules
@@ -286,27 +361,33 @@ need for greater precision.
 
 Some possible future ideas that could build on this solution might include:
 
- - As observed in [rust-lang/rust#76969], `FromRawFd` and friends don't
-   require that their implementors exclusively own their resources. It may be
-   useful in the future to add new `unsafe` traits which do require this.
+ - It may make sense to introduce new wrapper types around
+   `RawFd`/`RawHandle`/`RawSocket`, to improve the ergonomics of some of the
+   common use cases, however that can be explored separately. Such types may
+   also provide portability features as well, abstracting over some of the
+   `Fd`/`Handle`/`Socket` differences between platforms.
 
-   The [`from_filelike`] function in the `unsafe-io` crate is an example of
-   what that enables&mdash;a way to convert from any type that implements the
-   exclusive-owning counterpart of `IntoRawFd` into any type that implements
-   the exclusive-owning counterpart of `FromRawFd` without requiring any
-   `unsafe` in the user code.
+ - `OwnsRaw` enables higher-level abstractions. It may be interesting to
+   explore adding features like [`from_filelike`] or other functions function
+   in the [`unsafe-io`] crate to the standard library, as they eliminate the
+   need for `unsafe` in user code in several common use cases.
 
-   This is used in the `posish` crate to provide safe interfaces for POSIX-like
-   functionality without having raw file descriptors in the API, such as in
+   This is used in the [`posish`] crate to provide safe interfaces for
+   POSIX-like functionality without having `unsafe` in user code, such as in
    [this wrapper around `posix_fadvise`].
 
  - A formal model of ownership for raw resource handles.
 
- - A fine-grained capability-oriented security model for Rust, built on the
+ - With a proper model of ownership for raw resource handles, one could imagine
+   extending Miri to catch "use after close" and "use of invalidly computed
+   handle" bugs.
+
+ - A fine-grained capability-based security model for Rust, built on the
    fact that, with this new guarantee, the high-level wrappers around raw
    resource handles are unforgeable in safe Rust.
 
-[rust-lang/rust#76969]: https://github.com/rust-lang/rust/pull/76969
+[`unsafe-io`]: https://crates.io/crates/unsafe-io
+[`posish`]: https://crates.io/crates/posish
 [`from_filelike`]: https://docs.rs/unsafe-io/0.6.2/unsafe_io/trait.FromUnsafeFile.html#method.from_filelike
 [this wrapper around `posix_fadvise`]: https://docs.rs/posish/0.6.1/posish/fs/fn.fadvise.html
 
@@ -314,6 +395,26 @@ Some possible future ideas that could build on this solution might include:
 [thanks]: #thanks
 
 Thanks to Ralf Jung ([@RalfJung]) for leading me to my current understanding
-of this topic, and for encouraging and reviewing this RFC!
+of this topic, and for encouraging and reviewing early drafts of this RFC!
 
 [@RalfJung]: https://github.com/RalfJung
+
+[`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
+[`TcpStream`]: https://doc.rust-lang.org/stable/std/net/struct.TcpStream.html
+[`FromRawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.FromRawFd.html
+[`FromRawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawHandle.html
+[`FromRawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawSocket.html
+[`AsRawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.AsRawFd.html
+[`AsRawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.AsRawHandle.html
+[`AsRawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.AsRawSocket.html
+[`IntoRawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.IntoRawFd.html
+[`IntoRawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.IntoRawHandle.html
+[`IntoRawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.IntoRawSocket.html
+[`RawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/type.RawFd.html
+[`RawHandle`]: https://doc.rust-lang.org/stable/std/os/windows/io/type.RawHandle.html
+[`RawSocket`]: https://doc.rust-lang.org/stable/std/os/windows/io/type.RawSocket.html
+[`FromRawFd::from_raw_fd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.FromRawFd.html#tymethod.from_raw_fd
+[`FromRawHandle::from_raw_handle`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawHandle.html#tymethod.from_raw_handle
+[`FromRawSocket::from_raw_socket`]: https://doc.rust-lang.org/stable/std/os/windows/io/trait.FromRawSocket.html#tymethod.from_raw_socket
+[`SockRef::from`]: https://docs.rs/socket2/0.4.0/socket2/struct.SockRef.html#method.from
+[`unsafe_io::OwnsRaw`]: https://docs.rs/unsafe-io/0.6.2/unsafe_io/trait.OwnsRaw.html
