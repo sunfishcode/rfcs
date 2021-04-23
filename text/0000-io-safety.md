@@ -18,7 +18,7 @@ Rust's standard library almost provides *I/O safety*, a guarantee that if one
 part of a program holds a raw handle privately, other parts cannot access it.
 [`FromRawFd::from_raw_fd`] is unsafe, which prevents users from doing things
 like `File::from_raw_fd(7)`, in safe Rust, and doing I/O on a file descriptor
-which might encapsulated elsewhere.
+which might be held privately elsewhere in the program.
 
 However, there's a loophole. Many library APIs use [`AsRawFd`]/[`IntoRawFd`] to
 accept values to do I/O operations with:
@@ -35,20 +35,17 @@ can end up doing I/O on arbitrary `RawFd` values. One can even write
 
 This can cause programs to [access the wrong resources], or even break
 encapsulation boundaries by creating aliases to raw handles held privately
-elsewhere in the program, causing [spooky action at a distance].
+elsewhere, causing [spooky action at a distance].
 
-This RFC introduces a new concept and a new trait which work with the existing
-`std` types and traits without changing or replacing them. It provides a path
-to gradually closing the I/O safety loophole. And it answers a question that
-has come up a [few] [times] about why `from_raw_fd` is unsafe.
+This RFC introduces a path to gradually closing this loophole by introducing:
 
-The expected outcomes are:
-
- - A new concept, I/O safety, documented in the standard library documentation.
+ - A new concept, I/O safety, to be documented in the standard library
+   documentation.
  - A new trait, `std::io::OwnsRaw`.
  - New documentation for
    [`from_raw_fd`]/[`from_raw_handle`]/[`from_raw_socket`] explaining why
-   they're unsafe in terms of I/O safety.
+   they're unsafe in terms of I/O safety, addressing a question that has
+   come up a [few] [times].
 
 [few]: https://github.com/rust-lang/rust/issues/72175
 [times]: https://users.rust-lang.org/t/why-is-fromrawfd-unsafe/39670
@@ -245,9 +242,9 @@ good thing, independently of this RFC, because resources ultimately do have
 lifetimes, so most Rust code will always be better off using higher-level types
 which manage these lifetimes automatically and which provide better ergonomics
 in many other respects. As such, the plain-data approach would at best make raw
-handles marginally more ergonomic for uncommon use cases. This would be a small
-benefit, and may even be a downside, if it ends up encouraging people to write
-code that works with raw handles when they don't need to.
+handles marginally more ergonomic for relatively uncommon use cases. This would
+be a small benefit, and may even be a downside, if it ends up encouraging people
+to write code that works with raw handles when they don't need to.
 
 The plain-data approach also wouldn't need any code changes in any crates. The
 I/O safety approach will require changes to Rust code in crates such as
@@ -271,8 +268,6 @@ around the raw handles. Completely closing the safety loophole would also
 require designing new traits, since `AsRaw*` doesn't have a way to limit the
 lifetime of its return value. This RFC doesn't rule this out, but it would be a
 bigger change.
-
-[rust-lang/rust#76969]: https://github.com/rust-lang/rust/pull/76969
 
 ## I/O safety but not `OwnsRaw`
 
@@ -351,7 +346,6 @@ Thanks to Ralf Jung ([@RalfJung]) for leading me to my current understanding
 of this topic, and for encouraging and reviewing early drafts of this RFC!
 
 [@RalfJung]: https://github.com/RalfJung
-
 [`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
 [`TcpStream`]: https://doc.rust-lang.org/stable/std/net/struct.TcpStream.html
 [`FromRawFd`]: https://doc.rust-lang.org/stable/std/os/unix/io/trait.FromRawFd.html
@@ -377,3 +371,4 @@ of this topic, and for encouraging and reviewing early drafts of this RFC!
 [`socket2`]: https://crates.io/crates/socket2
 [`unsafe-io`]: https://crates.io/crates/unsafe-io
 [`posish`]: https://crates.io/crates/posish
+[rust-lang/rust#76969]: https://github.com/rust-lang/rust/pull/76969
