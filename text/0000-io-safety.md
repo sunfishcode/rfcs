@@ -29,9 +29,9 @@ pub fn do_some_io<FD: AsRawFd>(input: &FD) -> io::Result<()> {
 }
 ```
 
-`AsRawFd` doesn't restrict `as_raw_fd`'s return value though, so `do_some_io`
-can end up doing I/O on arbitrary `RawFd` values. One can even write
-`do_some_io(&7)`, since [`RawFd`] itself implements `AsRawFd`.
+`AsRawFd` doesn't restrict `as_raw_fd`'s return value, so `do_some_io` can end
+up doing I/O on arbitrary `RawFd` values. One can even write `do_some_io(&7)`,
+since [`RawFd`] itself implements `AsRawFd`.
 
 This can cause programs to [access the wrong resources], or even break
 encapsulation boundaries by creating aliases to raw handles held privately
