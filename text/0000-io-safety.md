@@ -114,9 +114,9 @@ returned from the OS, and that `from_raw_fd`'s return value won't outlive the
 lifetime the OS associates with the handle.
 
 I/O safety is new as an explicit concept, but it reflects common practices.
-Rust's `std` will require no changes, beyond the introduction of a new trait
-and new impls for it. Initially, not all of the Rust ecosystem will support I/O
-safety though; adoption will be gradual.
+Rust's `std` will require no changes to stable interfaces, beyond the
+introduction of a new trait and new impls for it. Initially, not all of the
+Rust ecosystem will support I/O safety though; adoption will be gradual.
 
 ## The `OwnsRaw` trait
 
