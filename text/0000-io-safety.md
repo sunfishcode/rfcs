@@ -218,8 +218,8 @@ All standard library types implementing `AsRawFd` implement `OwnsRaw`, except
 # Drawbacks
 [drawbacks]: #drawbacks
 
-Crates with APIs that use file descriptors, such as [`nix`], would need to
-migrate to types implementing `AsRawFd + OwnsRaw`, use crates providing
+Crates with APIs that use file descriptors, such as [`nix`] and [`mio`], would
+need to migrate to types implementing `AsRawFd + OwnsRaw`, use crates providing
 equivalent mechanisms such as [`unsafe-io`], or change such functions to be
 unsafe.
 
@@ -248,9 +248,9 @@ to write code that works with raw handles when they don't need to.
 
 The plain-data approach also wouldn't need any code changes in any crates. The
 I/O safety approach will require changes to Rust code in crates such as
-[`socket2`] and [`nix`] which have APIs involving [`AsRawFd`] and [`RawFd`],
-though the changes can be made gradually across the ecosystem rather than all
-at once.
+[`socket2`], [`nix`], and [`mio`] which have APIs involving [`AsRawFd`] and
+[`RawFd`], though the changes can be made gradually across the ecosystem rather
+than all at once.
 
 And, the plain-data approach would keep the scope of `unsafe` limited to just
 memory safety and undefined behavior. Rust has drawn a careful line here and
@@ -368,6 +368,7 @@ of this topic, and for encouraging and reviewing early drafts of this RFC!
 [`unsafe_io::OwnsRaw`]: https://docs.rs/unsafe-io/0.6.2/unsafe_io/trait.OwnsRaw.html
 [LLVM's pointer aliasing rules]: http://llvm.org/docs/LangRef.html#pointer-aliasing-rules
 [`nix`]: https://crates.io/crates/nix
+[`mio`]: https://crates.io/crates/mio
 [`socket2`]: https://crates.io/crates/socket2
 [`unsafe-io`]: https://crates.io/crates/unsafe-io
 [`posish`]: https://crates.io/crates/posish
