@@ -328,6 +328,8 @@ Some possible future ideas that could build on this RFC include:
    provide safe interfaces for POSIX-like functionality without having `unsafe`
    in user code, such as in [this wrapper around `posix_fadvise`].
 
+ - Clippy lints warning about common I/O-unsafe patterns.
+
  - A formal model of ownership for raw handles. One could even imagine
    extending Miri to catch "use after close" and "use of bogus computed handle"
    bugs.
