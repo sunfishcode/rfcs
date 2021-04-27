@@ -37,6 +37,15 @@ This can cause programs to [access the wrong resources], or even break
 encapsulation boundaries by creating aliases to raw handles held privately
 elsewhere, causing [spooky action at a distance].
 
+And in specialized circumstances, violating I/O safety could even lead to
+violating memory safety. For example, in theory it should be possible to make
+a safe wrapper around an `mmap` of a file descriptor created by Linux's
+[`memfd_create`] system call and pass `&[u8]`s to safe Rust, since it's an
+anonymous open file which other processes wouldn't be able to access. However,
+without I/O safety, other code in the program could accidentally call `write`
+or `ftruncate` on the file descriptor, breaking the memory-safety invariants
+of `&[u8]`.
+
 This RFC introduces a path to gradually closing this loophole by introducing:
 
  - A new concept, I/O safety, to be documented in the standard library
@@ -380,3 +389,4 @@ of this topic, and for encouraging and reviewing early drafts of this RFC!
 [`unsafe-io`]: https://crates.io/crates/unsafe-io
 [`posish`]: https://crates.io/crates/posish
 [rust-lang/rust#76969]: https://github.com/rust-lang/rust/pull/76969
+[`memfd_create`]: https://man7.org/linux/man-pages/man2/memfd_create.2.html
