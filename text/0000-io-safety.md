@@ -62,11 +62,16 @@ and [`RawHandle`]/[`RawSocket`] on Windows, which represent raw OS resource
 handles. These don't provide any behavior on their own, and just represent
 identifiers which can be passed to low-level OS APIs.
 
-These raw handles can be thought of as raw pointers, with similar hazards. The
-consequences of using an unintentionally aliased raw resource handle could
-include corrupted output or silently lost input data. It could also mean that
-code in one crate could accidentally corrupt or observe private data in another
-crate. Protection from these hazards is called *I/O safety*.
+These raw handles can be thought of as raw pointers, with similar hazards.
+While it's safe to *obtain* a raw pointer, *dereferencing* a raw pointer could
+invoke undefined behavior if it isn't a valid pointer or if it outlives the
+lifetime of the memory it points to. Similarly, it's safe to *obtain* a raw
+handle, via [`AsRawFd::as_raw_fd`] and similar, but using it to do I/O could
+lead to corrupted output, lost or leaked input data, or violated encapsulation
+boundaries, if it isn't a valid handle or it's used after the `close` of its
+resource. And in both cases, the effects can be non-local, affecting otherwise
+unrelated parts of a program. Protection from raw pointer hazards is called
+memory safety, so protection from raw handle hazards is called *I/O safety*.
 
 Rust's standard library also has high-level types such as [`File`] and
 [`TcpStream`] which are wrappers around these raw handles, providing high-level
