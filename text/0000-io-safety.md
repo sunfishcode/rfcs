@@ -42,9 +42,9 @@ violating memory safety. For example, in theory it should be possible to make
 a safe wrapper around an `mmap` of a file descriptor created by Linux's
 [`memfd_create`] system call and pass `&[u8]`s to safe Rust, since it's an
 anonymous open file which other processes wouldn't be able to access. However,
-without I/O safety, other code in the program could accidentally call `write`
-or `ftruncate` on the file descriptor, breaking the memory-safety invariants
-of `&[u8]`.
+without I/O safety, and without permenantly sealing the file, other code in
+the program could accidentally call `write` or `ftruncate` on the file
+descriptor, breaking the memory-safety invariants of `&[u8]`.
 
 This RFC introduces a path to gradually closing this loophole by introducing:
 
