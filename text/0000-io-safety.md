@@ -8,7 +8,7 @@
 
 Close a hole in encapsulation boundaries in Rust by providing users of
 `AsRawFd` and related traits guarantees about their raw resource handles, by
-introducing a concept of *I/O safety* and a new `OwnsRaw` trait. Build on, and
+introducing a concept of *I/O safety* and a new `IoSafe` trait. Build on, and
 provide an explanation for, the `from_raw_fd` function being unsafe.
 
 # Motivation
@@ -50,7 +50,7 @@ This RFC introduces a path to gradually closing this loophole by introducing:
 
  - A new concept, I/O safety, to be documented in the standard library
    documentation.
- - A new trait, `std::io::OwnsRaw`.
+ - A new trait, `std::io::IoSafe`.
  - New documentation for
    [`from_raw_fd`]/[`from_raw_handle`]/[`from_raw_socket`] explaining why
    they're unsafe in terms of I/O safety, addressing a question that has
@@ -132,7 +132,7 @@ Rust's `std` will require no changes to stable interfaces, beyond the
 introduction of a new trait and new impls for it. Initially, not all of the
 Rust ecosystem will support I/O safety though; adoption will be gradual.
 
-## The `OwnsRaw` trait
+## The `IoSafe` trait
 
 These high-level types also implement the traits [`AsRawFd`]/[`IntoRawFd`] on
 Unix-like platforms and
@@ -142,10 +142,10 @@ APIs use these to accept any type containing a raw handle, such as in the
 `do_some_io` example in the [motivation].
 
 `AsRaw*` and `IntoRaw*` don't make any guarantees, so to add I/O safety, types
-will implement a new trait, `OwnsRaw`:
+will implement a new trait, `IoSafe`:
 
 ```rust
-pub unsafe trait OwnsRaw {}
+pub unsafe trait IoSafe {}
 ```
 
 There are no required functions, so implementing it just takes one line, plus
@@ -156,34 +156,34 @@ comments:
 ///
 /// `MyType` wraps a `std::fs::File` which handles the low-level details, and
 /// doesn't have a way to reassign or independently drop it.
-unsafe impl OwnsRaw for MyType {}
+unsafe impl IoSafe for MyType {}
 ```
 
 It requires `unsafe`, to require the code to explicitly commit to upholding I/O
-safety. With `OwnsRaw`, the `do_some_io` example should simply add a
-`+ OwnsRaw` to provide I/O safety:
+safety. With `IoSafe`, the `do_some_io` example should simply add a
+`+ IoSafe` to provide I/O safety:
 
 ```rust
-pub fn do_some_io<FD: AsRawFd + OwnsRaw>(input: &FD) -> io::Result<()> {
+pub fn do_some_io<FD: AsRawFd + IoSafe>(input: &FD) -> io::Result<()> {
     some_syscall(input.as_raw_fd())
 }
 ```
 
 ## Gradual adoption
 
-I/O safety and `OwnsRaw` wouldn't need to be adopted immediately, adoption
+I/O safety and `IoSafe` wouldn't need to be adopted immediately, adoption
 could be gradual:
 
- - First, `std` adds `OwnsRaw` with impls for all the relevant `std` types.
+ - First, `std` adds `IoSafe` with impls for all the relevant `std` types.
    This is a backwards-compatible change.
 
- - After that, crates could implement `OwnsRaw` for their own types. These
+ - After that, crates could implement `IoSafe` for their own types. These
    changes would be small and semver-compatible, without special coordination.
 
- - Once the standard library and enough popular crates utilize `OwnsRaw`,
-   crates could start to add `+ OwnsRaw` bounds (or adding `unsafe`), at their
+ - Once the standard library and enough popular crates utilize `IoSafe`,
+   crates could start to add `+ IoSafe` bounds (or adding `unsafe`), at their
    own pace. These would be semver-incompatible changes, though most users of
-   APIs adding `+ OwnsRaw` wouldn't need any changes.
+   APIs adding `+ IoSafe` wouldn't need any changes.
 
 # Reference-level explanation
 [reference-level-explanation]: #reference-level-explanation
@@ -207,38 +207,38 @@ performed on those handles through safe APIs.
 
 Functions accepting types implementing
 [`AsRawFd`]/[`IntoRawFd`]/[`AsRawHandle`]/[`AsRawSocket`]/[`IntoRawHandle`]/[`IntoRawSocket`]
-should add a `+ OwnsRaw` bound if they do I/O with the returned raw handle.
+should add a `+ IoSafe` bound if they do I/O with the returned raw handle.
 
-## The `OwnsRaw` trait
+## The `IoSafe` trait
 
-Types implementing `OwnsRaw` guarantee that they uphold I/O safety. They must
+Types implementing `IoSafe` guarantee that they uphold I/O safety. They must
 not make it possible to write a safe function which can perform invalid I/O
 operations, and:
 
- - A type implementing `AsRaw* + OwnsRaw` means its `as_raw_*` function returns
+ - A type implementing `AsRaw* + IoSafe` means its `as_raw_*` function returns
    a handle which is valid to use as long as the object passed to `self` is
    live. If such types have methods to close or reassign the handle without
    dropping the whole object, they must document the conditions under which
    existing raw handle values remain valid to use.
 
- - A type implementing `IntoRaw* + OwnsRaw` means its `into_raw_*` function
+ - A type implementing `IntoRaw* + IoSafe` means its `into_raw_*` function
    returns a handle which is valid to use at the point of the return from
    the call.
 
-All standard library types implementing `AsRawFd` implement `OwnsRaw`, except
+All standard library types implementing `AsRawFd` implement `IoSafe`, except
 `RawFd`.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
 Crates with APIs that use file descriptors, such as [`nix`] and [`mio`], would
-need to migrate to types implementing `AsRawFd + OwnsRaw`, use crates providing
+need to migrate to types implementing `AsRawFd + IoSafe`, use crates providing
 equivalent mechanisms such as [`unsafe-io`], or change such functions to be
 unsafe.
 
 Crates using `AsRawFd` or `IntoRawFd` to accept "any file-like type" or "any
 socket-like type", such as [`socket2`]'s [`SockRef::from`], would need to
-either add a `+ OwnsRaw` bound or make these functions unsafe.
+either add a `+ IoSafe` bound or make these functions unsafe.
 
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
@@ -282,9 +282,9 @@ require designing new traits, since `AsRaw*` doesn't have a way to limit the
 lifetime of its return value. This RFC doesn't rule this out, but it would be a
 bigger change.
 
-## I/O safety but not `OwnsRaw`
+## I/O safety but not `IoSafe`
 
-The I/O safety concept doesn't depend on `OwnsRaw` being in `std`. Crates could
+The I/O safety concept doesn't depend on `IoSafe` being in `std`. Crates could
 continue to use [`unsafe_io::OwnsRaw`], though that does involve adding a
 dependency.
 
@@ -297,7 +297,7 @@ such as in [C#], [Java], and others. Making it `unsafe` to perform I/O through
 a given raw handle would let safe Rust have the same guarantees as those
 effectively provided by such languages.
 
-The `std::io::OwnsRaw` trait comes from [`unsafe_io::OwnsRaw`], and experience
+The `std::io::IoSafe` trait comes from [`unsafe_io::OwnsRaw`], and experience
 with this trait, including in some production use cases, has shaped this RFC.
 
 [C#]: https://docs.microsoft.com/en-us/dotnet/api/system.io.file?view=net-5.0
@@ -305,10 +305,6 @@ with this trait, including in some production use cases, has shaped this RFC.
 
 # Unresolved questions
 [unresolved-questions]: #unresolved-questions
-
-## Naming things...
-
-Is there a better name for the `OwnsRaw` trait?
 
 ## Formalizing ownership
 
@@ -335,7 +331,7 @@ Some possible future ideas that could build on this RFC include:
    features as well, abstracting over some of the `Fd`/`Handle`/`Socket`
    differences between platforms.
 
- - Higher-level abstractions built on `OwnsRaw`. Features like
+ - Higher-level abstractions built on `IoSafe`. Features like
    [`from_filelike`] and others in [`unsafe-io`] eliminate the need for
    `unsafe` in user code in some common use cases. [`posish`] uses this to
    provide safe interfaces for POSIX-like functionality without having `unsafe`
