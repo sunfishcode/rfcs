@@ -215,16 +215,15 @@ Types implementing `OwnsRaw` guarantee that they uphold I/O safety. They must
 not make it possible to write a safe function which can perform invalid I/O
 operations, and:
 
- - A type implementing `OwnsRaw` can only be constructed from a raw handle via
-   an unsafe function, such as [`from_raw_fd`].
-
  - A type implementing `AsRaw* + OwnsRaw` means its `as_raw_*` function returns
    a handle which is valid to use as long as the object passed to `self` is
-   live. Such types may not have methods to close or reassign the handle
-   without dropping the whole object.
+   live. If such types have methods to close or reassign the handle without
+   dropping the whole object, they must document the conditions under which
+   existing raw handle values remain valid to use.
 
  - A type implementing `IntoRaw* + OwnsRaw` means its `into_raw_*` function
-   returns a handle which is valid to use at the point of the call.
+   returns a handle which is valid to use at the point of the return from
+   the call.
 
 All standard library types implementing `AsRawFd` implement `OwnsRaw`, except
 `RawFd`.
