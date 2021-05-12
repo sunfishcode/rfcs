@@ -274,9 +274,9 @@ of addressing spooky-action-at-a-distance, and in terms of ownership being the
 main concept for robust abstractions, so it's natural to use similar safety
 concepts.
 
-## Newtypes for `RawFd`/`RawHandle`/`RawSocket`
+## New types for `RawFd`/`RawHandle`/`RawSocket`
 
-Some comments on [rust-lang/rust#76969] suggest introducing newtype wrappers
+Some comments on [rust-lang/rust#76969] suggest introducing new wrappers
 around the raw handles. Completely closing the safety loophole would also
 require designing new traits, since `AsRaw*` doesn't have a way to limit the
 lifetime of its return value. This RFC doesn't rule this out, but it would be a
@@ -288,9 +288,9 @@ The I/O safety concept doesn't depend on `IoSafe` being in `std`. Crates could
 continue to use [`unsafe_io::OwnsRaw`], though that does involve adding a
 dependency.
 
-## Define `IoSafe` in terms of the object, not the reference.
+## Define `IoSafe` in terms of the object, not the reference
 
-The [reference-level-explanation] explains `IoSafe + `AsRawFd` as returning a
+The [reference-level-explanation] explains `IoSafe + AsRawFd` as returning a
 handle valid to use for "the duration of the `&self` reference". This makes it
 similar to borrowing a reference to the handle, though it still uses a raw
 type which doesn't enforce the borrowing rules.
