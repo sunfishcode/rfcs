@@ -216,8 +216,8 @@ not make it possible to write a safe function which can perform invalid I/O
 operations, and:
 
  - A type implementing `AsRaw* + IoSafe` means its `as_raw_*` function returns
-   a handle which is valid to use as long as the object passed to `self` is
-   live. If such types have methods to close or reassign the handle without
+   a handle which is valid to use for the duration of the `&self` reference.
+   If such types have methods to close or reassign the handle without
    dropping the whole object, they must document the conditions under which
    existing raw handle values remain valid to use.
 
@@ -287,6 +287,19 @@ bigger change.
 The I/O safety concept doesn't depend on `IoSafe` being in `std`. Crates could
 continue to use [`unsafe_io::OwnsRaw`], though that does involve adding a
 dependency.
+
+## Define `IoSafe` in terms of the object, not the reference.
+
+The [reference-level-explanation] explains `IoSafe + `AsRawFd` as returning a
+handle valid to use for "the duration of the `&self` reference". This makes it
+similar to borrowing a reference to the handle, though it still uses a raw
+type which doesn't enforce the borrowing rules.
+
+An alternative would be to define it in terms of the underlying object. Since
+it returns raw types, arguably it would be better to make it work more like
+`slice::as_ptr` and other functions which return raw pointers that aren't
+connected to reference lifetimes. If the concept of borrowing is desired, new
+types could be introduced, with better ergonomics, in a separate proposal.
 
 # Prior art
 [prior-art]: #prior-art
