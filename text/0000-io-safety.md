@@ -228,6 +228,10 @@ operations, and:
 All standard library types implementing `AsRawFd` implement `IoSafe`, except
 `RawFd`.
 
+Note that, despite the naming similarity, the `IoSafe` trait's requirements not
+identical to the I/O safety requirements. The return value of `as_raw_*` is
+valid only for the duration of the `&self` argument passed in.
+
 # Drawbacks
 [drawbacks]: #drawbacks
 
