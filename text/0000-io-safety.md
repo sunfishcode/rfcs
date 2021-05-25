@@ -42,7 +42,7 @@ violating memory safety. For example, in theory it should be possible to make
 a safe wrapper around an `mmap` of a file descriptor created by Linux's
 [`memfd_create`] system call and pass `&[u8]`s to safe Rust, since it's an
 anonymous open file which other processes wouldn't be able to access. However,
-without I/O safety, and without permenantly sealing the file, other code in
+without I/O safety, and without permanently sealing the file, other code in
 the program could accidentally call `write` or `ftruncate` on the file
 descriptor, breaking the memory-safety invariants of `&[u8]`.
 
@@ -247,7 +247,40 @@ either add a `+ IoSafe` bound or make these functions unsafe.
 # Rationale and alternatives
 [rationale-and-alternatives]: #rationale-and-alternatives
 
-## Handles as plain data
+## Concerning "unsafe is for memory safety"
+
+Rust historically drew a line in the sand, stating that `unsafe` would only
+be for memory safety. A famous example is [`std::mem::forget`], which was
+once `unsafe`, and was [changed to safe]. The conclusion stating that unsafe
+only be for memory safety observed that unsafe should not be for “footguns”
+or for being “a general deterrent for "should be avoided" APIs”.
+
+Memory safety is elevated above other programming hazards because it isn't
+just about avoiding unintended behavior, but about avoiding situations where
+it's impossible to bound the set of things that a piece of code might do.
+
+I/O safety is also in this category, for two reasons.
+
+ - I/O safety errors can lead to memory safety errors in the presence of
+   safe wrappers around `mmap` (on platforms with OS-specific APIs allowing
+   them to otherwise be safe).
+
+ - I/O safety errors can also mean that a piece of code can read, write, or
+   delete data used by other parts of the program, without naming them or
+   being given a reference to them. It becomes impossible to bound the set
+   of things a crate can do without knowing the implementation details of all
+   other crates linked into the program.
+
+Raw handles are much like raw pointers into a separate address space; they can
+dangle or be computed in bogus ways. I/O safety is similar to memory safety;
+both prevent spooky-action-at-a-distance, and in both, ownership is the main
+foundation for robust abstractions, so it's natural to use similar safety
+concepts.
+
+[`std::mem::forget` being safe]: https://doc.rust-lang.org/std/mem/fn.forget.html
+[changed to safe]: https://rust-lang.github.io/rfcs/1066-safe-mem-forget.html
+
+## I/O Handles as plain data
 
 The main alternative would be to say that raw handles are plain data, with no
 concept of I/O safety and no inherent relationship to OS resource lifetimes. On
@@ -268,15 +301,6 @@ I/O safety approach will require changes to Rust code in crates such as
 [`socket2`], [`nix`], and [`mio`] which have APIs involving [`AsRawFd`] and
 [`RawFd`], though the changes can be made gradually across the ecosystem rather
 than all at once.
-
-And, the plain-data approach would keep the scope of `unsafe` limited to just
-memory safety and undefined behavior. Rust has drawn a careful line here and
-resisted using `unsafe` for describing arbitrary hazards. However, raw handles
-are like raw pointers into a separate address space; they can dangle or be
-computed in bogus ways. I/O safety is similar to memory safety, both in terms
-of addressing spooky-action-at-a-distance, and in terms of ownership being the
-main concept for robust abstractions, so it's natural to use similar safety
-concepts.
 
 ## New types for `RawFd`/`RawHandle`/`RawSocket`
 
@@ -371,7 +395,8 @@ Some possible future ideas that could build on this RFC include:
 [thanks]: #thanks
 
 Thanks to Ralf Jung ([@RalfJung]) for leading me to my current understanding
-of this topic, and for encouraging and reviewing early drafts of this RFC!
+of this topic, for encouraging and reviewing drafts of this RFC, and for
+patiently answering my many questions!
 
 [@RalfJung]: https://github.com/RalfJung
 [`File`]: https://doc.rust-lang.org/stable/std/fs/struct.File.html
